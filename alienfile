@@ -1,0 +1,102 @@
+use strict;
+use warnings;
+use alienfile;
+use Config;
+
+#
+use Alien::libsdl2;
+use Env qw[@PATH];
+unshift @PATH, Alien::libsdl2->bin_dir;
+
+#
+my $Win32 = $^O eq 'MSWin32';
+my $VC    = $Win32                              && ( $Config{ccname} eq 'cl' ? 1 : 0 );
+my $x64   = $Config{archname} =~ /^MSWin32-x64/ && $Config{ptrsize} == 8;
+
+
+#
+
+probe sub {
+    my ($build) = @_;    # $build is the Alien::Build instance.
+    return 'share';      # We need headers
+    system 'pkg-config --exists sdl_image';
+    $? == 0 ? 'system' : 'share';
+};
+share {
+    start_url 'https://www.libsdl.org/projects/SDL_image/release/';
+
+    if ($Win32) {
+        if ($VC) {
+            plugin 'Download' => (
+
+                # https://www.libsdl.org/projects/SDL_image/release/SDL2_image-devel-2.0.5-VC.zip
+                filter  => qr/^SDL2_image-devel-[0-9\.]+-VC\.zip$/,
+                version => qr/^SDL2_image-devel-([0-9\.]+)-VC\.zip$/,
+            );
+            plugin 'Extract' => 'zip';
+            build [
+                'move lib _lib',
+                'move _lib/' . ( $x64 ? 'x64' : 'x86' ) . ' lib'
+            ];
+        }
+        else {
+            plugin 'Download' => (
+
+                # https://www.libsdl.org/projects/SDL_image/release/SDL2_image-devel-2.0.5-mingw.tar.gz
+                filter  => qr/^SDL2_image-devel-[0-9\.]+-mingw\.tar\.gz$/,
+                version => qr/^SDL2_image-devel-([0-9\.]+)-mingw\.tar\.gz$/,
+            );
+            plugin 'Extract'     => 'tar.gz';
+            plugin 'Build::Make' => 'gmake';
+            build [
+                      '%{make} install-package arch='
+                    . ( $x64 ? 'x86_64' : 'i686' )
+                    . '-w64-mingw32 prefix=%{.install.prefix}',
+            ];
+        }
+    }
+    else {
+        plugin 'Download' => (
+
+            # https://www.libsdl.org/projects/SDL_image/release/SDL2_image-2.0.5.tar.gz
+            filter  => qr/^SDL2_image-[0-9\.]+\.tar\.gz$/,
+            version => qr/^SDL2_image-([0-9\.]+)\.tar\.gz$/,
+        );
+        plugin 'Extract' => 'tar.gz';
+
+        plugin 'Build::Autoconf';
+        plugin 'Build::Make' => 'gmake';
+
+        #build [
+        #    '%{configure} --prefix=%{.install.prefix} --enable-threads=no',
+        #    '%{make}',
+        #    '%{make} install',
+        #];
+
+        #  --with-sdl-prefix=PFX   Prefix where SDL is installed (optional)
+        #  --with-sdl-exec-prefix=PFX Exec prefix where SDL is installed (optional)
+        build [
+            #'mkdir build', 'cd build',
+            '%{configure} SDL_CFLAGS="'
+                . Alien::libsdl2->cflags
+                . '" SDL_LIBS="'
+                . ( Alien::libsdl2->dynamic_libs() // Alien::libsdl2->libs_static ) . '"',
+
+            #'" --disable-sdltest --with-sdl-prefix="' . Alien::libsdl2->dist_dir() .'"',    # --prefix=%{.install.prefix}', # --enable-threads=no',
+            '%{gmake} -j 10',
+            '%{gmake} install',
+        ];
+# Alien::Base
+    }
+};
+
+plugin 'Gather::IsolateDynamic';
+
+gather [
+    [ 'pkg-config --modversion sdl2_image',                            \'%{.runtime.version}' ],
+    [ 'pkg-config --cflags ' . ( $Win32 ? '--static' : '' ) . ' sdl2_image', \'%{.runtime.cflags}' ],
+    [
+        ( $Win32 ? 'cd %{.install.prefix}; sh sdl-config --libs sdl2_image' : 'pkg-config --libs sdl2_image' ),
+        \'%{.runtime.libs}'
+    ],
+];

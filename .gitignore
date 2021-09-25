@@ -1,0 +1,14 @@
+/Alien-libsdl2_image-*
+/.build
+/.tidyall.d
+/t/.tmp
+/_alien/
+/blib/
+/pm_to_blib
+Makefile
+MYMETA.*
+t/04-xs.t.old
+t/05-ffi_bundle.t.old
+t/ffi/_build/
+t/ffi/init.c.orig
+*.old
